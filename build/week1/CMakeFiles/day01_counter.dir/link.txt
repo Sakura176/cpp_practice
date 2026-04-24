@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/day01_counter.dir/link.d CMakeFiles/day01_counter.dir/day01_counter.cpp.o -o day01_counter
