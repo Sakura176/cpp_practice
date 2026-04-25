@@ -1,54 +1,61 @@
-#include <chrono>
 #include <iostream>
 #include <mutex>
 #include <thread>
 
 using namespace std::chrono_literals;
 
-class Counter {
+class Counter
+{
 public:
-  void incresment() {
-    std::lock_guard<std::mutex> lock(mtx);
-    count++;
-  }
+    void incresment()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        count++;
+    }
 
-  void decresment() {
-    std::lock_guard<std::mutex> lock(mtx);
-    count--;
-  }
+    void decresment()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        count--;
+    }
 
-  long get() const { return count; }
+    long get() const
+    {
+        // NOTE: 此处读数据未加锁，需要验证是否存在问题
+        return count;
+    }
 
 private:
-  long count{0};
-  std::mutex mtx;
+    long       count{0};
+    std::mutex mtx;
 };
 
-int main(int argc, char *argv[]) {
-  Counter count;
+int main(int argc, char* argv[])
+{
+    Counter count;
 
-  auto incres_func = [&count]() {
-    while (true) {
-      // std::this_thread::sleep_for(1s);
-      count.incresment();
+    auto incres_func = [&count]() {
+        while (true) {
+            // std::this_thread::sleep_for(1s);
+            count.incresment();
 
-      std::cout << "incresment count: " << count.get() << std::endl;
-    }
-  };
-  auto decres_func = [&count]() {
-    while (true) {
-      // std::this_thread::sleep_for(2s);
-      count.decresment();
+            std::cout << "incresment count: " << count.get() << std::endl;
+        }
+    };
+    auto decres_func = [&count]() {
+        while (true) {
+            // std::this_thread::sleep_for(2s);
+            count.decresment();
 
-      std::cout << "decresment count: " << count.get() << std::endl;
-    }
-  };
+            std::cout << "decresment count: " << count.get() << std::endl;
+        }
+    };
 
-  std::thread incre_thread(incres_func);
-  std::thread decre_thread(decres_func);
+    std::thread incre_thread(incres_func);
+    std::thread decre_thread(decres_func);
 
-  incre_thread.join();
-  decre_thread.join();
-  std::cout << "end" << count.get() << std::endl;
-  return 0;
+    incre_thread.join();
+    decre_thread.join();
+    std::cout << "end" << count.get() << std::endl;
+    return 0;
 }

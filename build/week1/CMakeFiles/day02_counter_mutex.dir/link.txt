@@ -1,1 +1,0 @@
-/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/day02_counter_mutex.dir/link.d CMakeFiles/day02_counter_mutex.dir/day02_counter_mutex.cpp.o -o day02_counter_mutex

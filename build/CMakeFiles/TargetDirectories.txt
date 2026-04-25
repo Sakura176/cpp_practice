@@ -1,6 +1,0 @@
-/home/yc/code_exercise/build/CMakeFiles/edit_cache.dir
-/home/yc/code_exercise/build/CMakeFiles/rebuild_cache.dir
-/home/yc/code_exercise/build/week1/CMakeFiles/day01_counter.dir
-/home/yc/code_exercise/build/week1/CMakeFiles/day02_counter_mutex.dir
-/home/yc/code_exercise/build/week1/CMakeFiles/edit_cache.dir
-/home/yc/code_exercise/build/week1/CMakeFiles/rebuild_cache.dir
