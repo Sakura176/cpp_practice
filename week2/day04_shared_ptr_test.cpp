@@ -15,8 +15,8 @@
  *  11. 多个 shared_ptr 共享所有权
  */
 
-#include <gtest/gtest.h>
 #include "day04_shared_ptr.h"
+#include <gtest/gtest.h>
 
 #include <string>
 #include <utility>
@@ -31,17 +31,18 @@ struct Tracker
     static int total_constructed;
 
     int id;
-    Tracker(int id = 0) : id(id) {
+    Tracker(int id = 0) : id(id)
+    {
         alive++;
         total_constructed++;
     }
     ~Tracker() { alive--; }
-    Tracker(const Tracker&) = delete;
+    Tracker(const Tracker&)            = delete;
     Tracker& operator=(const Tracker&) = delete;
 
     int get_id() const { return id; }
 };
-int Tracker::alive = 0;
+int Tracker::alive             = 0;
 int Tracker::total_constructed = 0;
 
 // -----------------------------------------------------------
@@ -76,6 +77,8 @@ TEST(Day04, ptr_construct)
 
 TEST(Day04, copy_construct_increases_count)
 {
+    Tracker::alive = 0;
+
     shared_ptr<Tracker> sp1(new Tracker(1));
     EXPECT_EQ(sp1.use_count(), 1u) << "count 1 after construct";
 

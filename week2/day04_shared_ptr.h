@@ -1,7 +1,12 @@
 #ifndef SHARED_PTR_H
 #define SHARED_PTR_H
 
+// NOTE: <iostream> 仅用于调试打印，生产代码应移除（详见评审文档）
+// NOTE: <cstddef> 提供 size_t，若改用 unsigned long 可移除
 #include <cstddef>
+#include <iostream>
+// NOTE: 使用 std::swap 应包含 <utility>，<algorithm> 不保证提供 swap
+#include <utility>
 
 /**
  * @brief 极简 shared_ptr<T>
@@ -81,12 +86,155 @@ public:
     explicit operator bool() const noexcept;
 
 private:
-    T*    ptr_;
-    int*  ref_count_;  // 堆上分配的引用计数
+    // 命名: desconstruct → dec_ref / release_ref 更清晰
+    // 【BUG】当 *ref_count_ == 0 时（来自空 shared_ptr 的拷贝）误入 else 分支，delete ref_count_ → 后续 double-free
+    // 【注意】当 ref_count_ 为 nullptr 时（如果改用 nullptr 表示空），这里会崩溃
+    void dec_ref()
+    {
+        if (!ref_count_)
+            return;
+
+        if (*ref_count_ > 1) {
+            (*ref_count_)--;
+        } else {
+            if (ptr_) {
+                delete ptr_;
+                ptr_ = nullptr;
+            }
+            if (ref_count_) {
+                delete ref_count_;
+                ref_count_ = nullptr;
+            }
+        }
+    }
+
+private:
+    T* ptr_;
+    // 【设计】ref_count_ 作为裸指针管理堆上的引用计数。
+    // 空状态应设为 nullptr。但当前默认构造为它分配了 int(0)，
+    // 导致空 shared_ptr 被拷贝时 double-free（参见 desconstruct）
+    int* ref_count_;
 };
 
 // ============================================================
 // TODO: 在这里实现模板成员函数
 // ============================================================
 
-#endif  // SHARED_PTR_H
+// 【设计】默认构造：为 nullptr 分配 ref_count 是浪费且危险的。
+// 问题: 拷贝一个默认构造的 shared_ptr → 两个实例共享 ref_count → double-free
+// 正确做法: ref_count_ = nullptr; 由调用方保证不拷贝空对象，或在所有操作中处理 nullptr
+template<typename T>
+shared_ptr<T>::shared_ptr() noexcept : ptr_(nullptr),
+                                       ref_count_(nullptr)
+{
+}
+
+template<typename T>
+shared_ptr<T>::shared_ptr(T* ptr) : ptr_(ptr)
+{
+    // std::cout << "shared_ptr val: " << (*ptr) << std::endl;
+    ref_count_ = new int(1);
+    // *ref_count_ = 1;
+}
+
+// 析构函数中的 std::cout 是调试残留，生产代码应移除
+// 注意: 如果 ref_count_ 已被其他路径 delete（如移动后 source 未置空），此处读 *ref_count_ 是 use-after-free
+template<typename T>
+shared_ptr<T>::~shared_ptr()
+{
+    // std::cout << "~shared_ptr ref_count_: " << *ref_count_ << std::endl;
+    dec_ref();
+}
+
+// 拷贝构造函数: 引用计数 +1，语义正确。
+// 隐患: 当 other 是默认构造的空 shared_ptr（*ref_count_ == 0）时，
+// 两个实例共享 ref_count_，析构时为"最后一个"互相争抢 delete → double-free
+template<typename T>
+shared_ptr<T>::shared_ptr(const shared_ptr& other) noexcept : ptr_(other.ptr_)
+{
+    ref_count_ = other.ref_count_;
+    (*ref_count_)++;
+}
+
+// 【BUG】没有自赋值检查: sp = sp 时 use_count() == 1 → desconstruct() delete 自己 → 后续操作已释放内存 → UB
+// 修复: if (this == &other) return *this; 放在 desconstruct() 之前
+template<typename T>
+shared_ptr<T>& shared_ptr<T>::operator=(const shared_ptr& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    dec_ref();
+
+    ptr_       = other.ptr_;
+    ref_count_ = other.ref_count_;
+    (*ref_count_)++;
+
+    return *this;
+}
+
+// 【BUG 1】ptr_ 未初始化就被 std::swap 读取 → UB（同 day03 问题）
+// 【BUG 2】other.ref_count_ 未置空！
+// 移动后 this 和 other 共享同一 ref_count_，两者析构时 double-free
+// 正确实现:
+//   shared_ptr(shared_ptr&& other) noexcept
+//       : ptr_(std::exchange(other.ptr_, nullptr))
+//       , ref_count_(std::exchange(other.ref_count_, nullptr))
+//   {}
+template<typename T>
+shared_ptr<T>::shared_ptr(shared_ptr&& other) noexcept
+    : ptr_(std::exchange(other.ptr_, nullptr)),
+      ref_count_(std::exchange(other.ref_count_, nullptr))
+{
+}
+
+// 【BUG 1】同拷贝赋值: 自赋值时 use_count() == 1 → double-free
+// 【BUG 2】other.ref_count_ 未置空 → 移动后 source 与 this 共享 ref_count_，析构时 double-free
+// 正确实现:
+//   if (this == &other) return *this;
+//   reset(); // 释放当前资源
+//   ptr_ = std::exchange(other.ptr_, nullptr);
+//   ref_count_ = std::exchange(other.ref_count_, nullptr);
+template<typename T>
+shared_ptr<T>& shared_ptr<T>::operator=(shared_ptr&& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    dec_ref();
+
+    ptr_       = std::exchange(other.ptr_, nullptr);
+    ref_count_ = std::exchange(other.ref_count_, nullptr);
+    return *this;
+}
+
+// NOTE: operator* 不应有副作用（打印到 stdout）。
+// 调用方期望的是纯粹的解引用操作，控制台输出违反最小惊讶原则。
+// 去掉 std::cout 行即可。
+template<typename T>
+T& shared_ptr<T>::operator*() const noexcept
+{
+    // std::cout << "val: " << *ptr_ << std::endl;
+    return *ptr_;
+}
+
+template<typename T>
+T* shared_ptr<T>::operator->() const noexcept
+{ return ptr_; }
+
+template<typename T>
+T* shared_ptr<T>::get() const noexcept
+{ return ptr_; }
+
+template<typename T>
+size_t shared_ptr<T>::use_count() const noexcept
+{
+    if (!ref_count_)
+        return 0;
+    return *ref_count_;
+}
+
+template<typename T>
+shared_ptr<T>::operator bool() const noexcept
+{ return ptr_ != nullptr; }
+#endif // SHARED_PTR_H

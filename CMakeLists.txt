@@ -41,8 +41,8 @@ function(add_practice_test DAY_NAME IMPL_PATH TEST_PATH)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}
     )
-    target_link_libraries(${DAY_NAME}_test GTest::gtest GTest::gtest_main pthread)
-    target_compile_options(${DAY_NAME}_test PRIVATE -g)
+    target_link_libraries(${DAY_NAME}_test GTest::gtest GTest::gtest_main pthread -fsanitize=thread)
+    target_compile_options(${DAY_NAME}_test PRIVATE -fsanitize=thread -g)
     gtest_discover_tests(${DAY_NAME}_test)
 endfunction()
 
@@ -53,8 +53,8 @@ function(add_practice_header_only_test DAY_NAME TEST_PATH)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}
     )
-    target_link_libraries(${DAY_NAME}_test GTest::gtest GTest::gtest_main)
-    target_compile_options(${DAY_NAME}_test PRIVATE -g)
+    target_link_libraries(${DAY_NAME}_test GTest::gtest GTest::gtest_main -fsanitize=thread)
+    target_compile_options(${DAY_NAME}_test PRIVATE -fsanitize=thread -g)
     gtest_discover_tests(${DAY_NAME}_test)
 endfunction()
 
