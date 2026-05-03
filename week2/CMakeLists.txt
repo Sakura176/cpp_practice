@@ -26,7 +26,7 @@ add_practice_header_only_test(day04_shared_ptr
     "day04_shared_ptr_test.cpp"
 )
 
-# # ---- Day05: 链表（模板类）----
-# add_practice_header_only_test(day05_linked_list
-#     "day05_linked_list_test.cpp"
-# )
+# ---- Day05: 链表（模板类）----
+add_practice_header_only_test(day05_linked_list
+    "day05_linked_list_test.cpp"
+)

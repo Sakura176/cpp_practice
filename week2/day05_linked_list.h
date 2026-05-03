@@ -1,7 +1,9 @@
 #ifndef LINKED_LIST_H
 #define LINKED_LIST_H
 
+#include "day03_unique_ptr.h"
 #include <cstddef>
+#include <iostream>
 #include <utility>
 
 /**
@@ -41,9 +43,14 @@ private:
         T data;
         // TODO: 使用你自己实现的 unique_ptr<T> 或 std::unique_ptr
         // 如果使用自己的 unique_ptr，注意 include "day03_unique_ptr.h"
-        Node* next;
+        unique_ptr<Node> next;
 
-        Node(const T& val) : data(val), next(nullptr) {}
+        Node() = default;
+        template<typename U>
+        explicit Node(U&& val) : data(std::forward<U>(val)),
+                                 next(nullptr)
+        {
+        }
     };
 
 public:
@@ -65,7 +72,48 @@ public:
     // TODO: class iterator { ... };
     // TODO: iterator begin();
     // TODO: iterator end();
+    class iterator
+    {
+    public:
+        iterator(Node* ptr) : ptr_(ptr) {}
 
+        bool operator!=(iterator oth) { return this->ptr_ != oth.ptr_; }
+
+        iterator& operator++()
+        {
+            ptr_ = this->ptr_->next.get();
+            return *this;
+        }
+
+        T& operator*() { return ptr_->data; }
+
+    private:
+        Node* ptr_;
+    };
+
+    iterator begin() { return iterator(head.get()); }
+    iterator end() { return iterator(nullptr); }
+    class const_iterator
+    {
+    public:
+        const_iterator(const Node* ptr) : ptr_(ptr) {}
+
+        bool operator!=(const_iterator oth) { return this->ptr_ != oth.ptr_; }
+
+        const_iterator operator++()
+        {
+            ptr_ = this->ptr_->next.get();
+            return *this;
+        }
+
+        const T& operator*() { return ptr_->data; }
+
+    private:
+        const Node* ptr_;
+    };
+
+    const_iterator begin() const { return const_iterator(head.get()); }
+    const_iterator end() const { return const_iterator(nullptr); }
     // ============================================================
     // TODO: 实现以下接口
     // ============================================================
@@ -78,17 +126,18 @@ public:
     List& operator=(List&& other) noexcept;
 
     // 禁止拷贝
-    List(const List&) = delete;
+    List(const List&)            = delete;
     List& operator=(const List&) = delete;
 
     /** 头部插入 */
     void push_front(const T& value);
+    void push_front(T&& value);
 
     /** 头部删除 */
     void pop_front();
 
     /** 访问头部元素 */
-    T& front();
+    T&       front();
     const T& front() const;
 
     /** 链表是否为空 */
@@ -100,10 +149,84 @@ public:
 private:
     // TODO: 成员变量
     // 提示: 用头指针管理整个链
+    unique_ptr<Node> head;
+    size_t           length{0};
 };
 
 // ============================================================
 // TODO: 在这里实现模板成员函数
 // ============================================================
+template<typename T>
+List<T>::List() noexcept
+{ head = unique_ptr<Node>(new Node()); }
 
-#endif  // LINKED_LIST_H
+template<typename T>
+List<T>::~List()
+{
+}
+
+template<typename T>
+List<T>::List(List&& other) noexcept : head(std::move(other.head)),
+                                       length(other.length)
+{
+    other.head   = unique_ptr<Node>(new Node());
+    other.length = 0;
+}
+
+template<typename T>
+List<T>& List<T>::operator=(List&& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    head       = std::move(other.head);
+    other.head = unique_ptr<Node>(new Node());
+    length     = std::exchange(other.length, 0);
+    return *this;
+}
+
+template<typename T>
+void List<T>::push_front(const T& val)
+{
+    auto node  = unique_ptr<Node>(new Node(val));
+    node->next = std::move(head->next);
+    head->next = std::move(node);
+    length++;
+}
+
+template<typename T>
+void List<T>::push_front(T&& val)
+{
+    auto node  = unique_ptr<Node>(new Node(std::move(val)));
+    node->next = std::move(head->next);
+    head->next = std::move(node);
+    length++;
+}
+
+template<typename T>
+void List<T>::pop_front()
+{
+    if (length <= 0)
+        return;
+    auto node  = std::move(head->next);
+    head->next = std::move(node->next);
+    length--;
+}
+
+template<typename T>
+T& List<T>::front()
+{ return head->next->data; }
+
+template<typename T>
+const T& List<T>::front() const
+{ return head->next->data; }
+
+template<typename T>
+bool List<T>::empty() const noexcept
+{ return length == 0; }
+
+template<typename T>
+size_t List<T>::size() const noexcept
+{ return length; }
+
+#endif // LINKED_LIST_H

@@ -109,9 +109,9 @@ make day01_file_reader_test && ./week2/day01_file_reader_test
 
 ### 第 2 周：RAII 与资源管理
 - [x] **周一**：手写 `FileReader`，构造打开文件，析构自动 `close`
-- [ ] **周二**：手写 `ScopedMutex`（类似 `std::lock_guard`），构造加锁，析构解锁
-- [ ] **周三**：手写极简 `unique_ptr<T>`，支持移动，禁止拷贝
-- [ ] **周四**：手写极简 `shared_ptr<T>`，带引用计数
+- [x] **周二**：手写 `ScopedMutex`（类似 `std::lock_guard`），构造加锁，析构解锁
+- [x] **周三**：手写极简 `unique_ptr<T>`，支持移动，禁止拷贝
+- [x] **周四**：手写极简 `shared_ptr<T>`，带引用计数
 - [ ] **周五**：用 `unique_ptr` 改写链表，零 `delete` 关键字
 > **检验标准**：资源生命周期与对象绑定，无手动释放
 >

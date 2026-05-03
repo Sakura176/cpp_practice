@@ -13,8 +13,8 @@
  *  9. 范围 for 循环（如果实现了迭代器）
  */
 
-#include <gtest/gtest.h>
 #include "day05_linked_list.h"
+#include <gtest/gtest.h>
 
 #include <string>
 
@@ -25,12 +25,18 @@
 struct Tracker
 {
     static int alive;
-    int id;
+    int        id;
 
     Tracker(int id = 0) : id(id) { alive++; }
     ~Tracker() { alive--; }
-    Tracker(const Tracker&) = delete;
+    Tracker(const Tracker&)            = delete;
     Tracker& operator=(const Tracker&) = delete;
+    Tracker(Tracker&& oth) noexcept
+    {
+        id     = oth.id;
+        oth.id = 0;
+        alive++;
+    }
 };
 int Tracker::alive = 0;
 
@@ -167,7 +173,7 @@ TEST(Day05, pop_front_empty)
 
 TEST(Day05, many_elements)
 {
-    List<int> lst;
+    List<int>     lst;
     constexpr int N = 10000;
     for (int i = 0; i < N; ++i) {
         lst.push_front(i);
@@ -201,7 +207,7 @@ TEST(Day05, range_for)
     EXPECT_EQ(sum, 6) << "range-for sum = 1+2+3";
 
     const List<int>& clst = lst;
-    sum = 0;
+    sum                   = 0;
     for (int v : clst) {
         sum += v;
     }
