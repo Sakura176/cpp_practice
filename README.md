@@ -112,7 +112,7 @@ make day01_file_reader_test && ./week2/day01_file_reader_test
 - [x] **周二**：手写 `ScopedMutex`（类似 `std::lock_guard`），构造加锁，析构解锁
 - [x] **周三**：手写极简 `unique_ptr<T>`，支持移动，禁止拷贝
 - [x] **周四**：手写极简 `shared_ptr<T>`，带引用计数
-- [ ] **周五**：用 `unique_ptr` 改写链表，零 `delete` 关键字
+- [x] **周五**：用 `unique_ptr` 改写链表，零 `delete` 关键字
 > **检验标准**：资源生命周期与对象绑定，无手动释放
 >
 > 🧪 **测试验证**：`make dayXX_name_test && ./build/week2/dayXX_name_test`
