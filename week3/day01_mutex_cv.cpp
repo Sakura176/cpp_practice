@@ -60,6 +60,7 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <thread>
 
@@ -84,13 +85,13 @@
 template<typename T>
 class ThreadSafeQueue
 {
-public:
+private:
     std::queue<T>           queue_;
     std::mutex              mtx_;
     std::condition_variable cv_;
     bool                    stopped_{false};
 
-private:
+public:
     void push(const T& value)
     {
         std::lock_guard<std::mutex> lock(mtx_);
@@ -98,8 +99,32 @@ private:
 
         cv_.notify_one();
     }
+
+    std::optional<T> pop()
+    {
+        std::unique_lock<std::mutex> uni_lock(mtx_);
+
+        cv_.wait(uni_lock, [&] { return stopped_ || !queue_.empty(); });
+
+        T val = queue_.front();
+        queue_.pop();
+
+        return std::optional<T>(val);
+    }
+
+    void stop()
+    {
+        stopped_ = true;
+        cv_.notify_all();
+    }
+
+    bool is_stop() const { return stopped_; }
+    bool empty() const { return queue_.empty(); }
+
+    size_t size() const { return queue_.size(); }
 };
 
+using namespace std::chrono_literals;
 // ============================================================
 // TODO: main() — 启动 2 个生产者 + 2 个消费者，运行 1 秒后 stop()
 // ============================================================
@@ -112,6 +137,39 @@ int main()
     // TODO: 启动消费者线程（pop 并打印）
     // TODO: sleep 1 秒后调用 stop()
     // TODO: join 所有线程
+
+    ThreadSafeQueue<int> que;
+
+    std::thread producer_thread([&] {
+        int i = 0;
+        while (!que.is_stop()) {
+            que.push(i);
+            std::cout << "producer_thread push val: " << i++ << "\n";
+        }
+    });
+
+    std::thread consumer_thread([&] {
+        while (!que.is_stop()) {
+            auto val = que.pop();
+            if (val.has_value()) {
+                std::cout << "consumer_thread pop val: " << val.value() << "\n";
+            }
+        }
+
+        while (!que.empty()) {
+            auto val = que.pop();
+            // if (val.has_value()) {
+            //     std::cout << "consumer_thread pop val: " << val.value() << "\n";
+            // }
+        }
+        std::cout << "que empty\n";
+    });
+
+    std::this_thread::sleep_for(1s);
+    que.stop();
+
+    producer_thread.join();
+    consumer_thread.join();
 
     return 0;
 }
