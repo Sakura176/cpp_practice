@@ -118,7 +118,7 @@ make day01_file_reader_test && ./week2/day01_file_reader_test
 > 🧪 **测试验证**：`make dayXX_name_test && ./build/week2/dayXX_name_test`
 
 ### 第 3 周：生产者 - 消费者专题（高频手撕）
-- [ ] **周一**：互斥锁 + 条件变量版（支持优雅退出 `stop()` + `notify_all()`）
+- [x] **周一**：互斥锁 + 条件变量版（支持优雅退出 `stop()` + `notify_all()`）
 - [ ] **周二**：信号量版（C++20 `std::counting_semaphore`）
 - [ ] **周三**：无锁队列版（SPSC，`std::atomic` + 环形缓冲区）
 - [ ] **周四**：多生产者多消费者版（正确同步）

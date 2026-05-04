@@ -87,7 +87,7 @@ class ThreadSafeQueue
 {
 private:
     std::queue<T>           queue_;
-    std::mutex              mtx_;
+    mutable std::mutex      mtx_;
     std::condition_variable cv_;
     bool                    stopped_{false};
 
@@ -100,11 +100,18 @@ public:
         cv_.notify_one();
     }
 
+    // 【BUG】pop() 在 stop() 后空队列上调用 queue_.front() → UB
+    // 修复: wait 后检查 queue_.empty()，空则返回 nullopt
+    // cv_.wait(uni_lock, [&] { return !queue_.empty() || stopped_; });
+    // if (queue_.empty()) return std::nullopt;  // stopped, nothing to pop
     std::optional<T> pop()
     {
         std::unique_lock<std::mutex> uni_lock(mtx_);
 
-        cv_.wait(uni_lock, [&] { return stopped_ || !queue_.empty(); });
+        cv_.wait(uni_lock, [&] { return !queue_.empty() || stopped_; });
+        // 如果 stopped_ == true 且队列为空，下行 front() 是 UB
+        if (queue_.empty())
+            return std::nullopt;
 
         T val = queue_.front();
         queue_.pop();
@@ -112,16 +119,35 @@ public:
         return std::optional<T>(val);
     }
 
+    // 【BUG】stop() 写入 stopped_ 未加锁，与 pop() 中的读取形成 data race
+    // 修复: std::lock_guard<std::mutex> lock(mtx_); 后再设置 stopped_
     void stop()
     {
+        std::lock_guard<std::mutex> lock(mtx_);
         stopped_ = true;
         cv_.notify_all();
     }
 
-    bool is_stop() const { return stopped_; }
-    bool empty() const { return queue_.empty(); }
+    // 【BUG】is_stop() 读取 stopped_ 无同步 → data race（与 stop() 中的写入竞争）
+    // 修复: std::atomic<bool> stopped_; 或加锁读取
+    bool is_stop() const
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return stopped_;
+    }
+    // 【BUG】empty() 读取 queue_ 内部状态无锁保护 → data race（与 push/pop 竞争）
+    bool empty() const
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return queue_.empty();
+    }
 
-    size_t size() const { return queue_.size(); }
+    // 【BUG】size() 读取 queue_ 内部状态无锁保护 → data race
+    size_t size() const
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return queue_.size();
+    }
 };
 
 using namespace std::chrono_literals;
@@ -148,6 +174,8 @@ int main()
         }
     });
 
+    // 【BUG】drain 循环中 que.empty() 无锁 + que.pop() 在停止后可能对空队列 front → UB
+    // 应使用 try_pop() 非阻塞弹出，而非复用 condvar 版 pop()
     std::thread consumer_thread([&] {
         while (!que.is_stop()) {
             auto val = que.pop();
@@ -164,12 +192,28 @@ int main()
         }
         std::cout << "que empty\n";
     });
+    std::thread consumer_thread1([&] {
+        while (!que.is_stop()) {
+            auto val = que.pop();
+            if (val.has_value()) {
+                std::cout << "consumer_thread pop val: " << val.value() << "\n";
+            }
+        }
 
+        while (!que.empty()) {
+            auto val = que.pop();
+            // if (val.has_value()) {
+            //     std::cout << "consumer_thread pop val: " << val.value() << "\n";
+            // }
+        }
+        std::cout << "que empty\n";
+    });
     std::this_thread::sleep_for(1s);
     que.stop();
 
     producer_thread.join();
     consumer_thread.join();
+    consumer_thread1.join();
 
     return 0;
 }
