@@ -55,6 +55,8 @@
  *       acquire 永远不会让计数低于 0，release 永远不会超过 max。
  */
 
+#include <atomic>
+#include <cstdio>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -75,6 +77,52 @@
 //   T pop()             — sem_.acquire(); mtx_.lock(); pop; mtx_.unlock(); return value;
 //                      注意顺序: 先等信号量再拿锁（避免持锁阻塞）
 // ============================================================
+template<typename T>
+class SemaphoreQueue
+{
+private:
+    std::queue<T>                queue_;
+    mutable std::mutex           mtx_;
+    std::counting_semaphore<100> sem_;
+    std::atomic<bool>            stop_{false};
+
+public:
+    SemaphoreQueue() : sem_(0) {}
+
+    void push(const T& value)
+    {
+        mtx_.lock();
+        queue_.push(value);
+        mtx_.unlock();
+        sem_.release();
+    }
+
+    T pop()
+    {
+        sem_.acquire();
+        mtx_.lock();
+        auto val = queue_.front();
+        queue_.pop();
+        mtx_.unlock();
+        return val;
+    }
+
+    size_t size() const
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return queue_.size();
+    }
+
+    bool empty() const
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return queue_.empty();
+    }
+
+    void stop() { stop_.store(true); }
+
+    bool is_stop() const { return stop_.load(); }
+};
 
 // ============================================================
 // TODO: main()
@@ -86,6 +134,38 @@ int main()
     // TODO: 创建 SemaphoreQueue<int>
     // TODO: 生产者消费者线程
     // TODO: 演示信号量版本比 condvar 版本更简洁
+
+    SemaphoreQueue<int> que;
+
+    std::thread p_thread([&] {
+        int count = 0;
+        while (!que.is_stop()) {
+            que.push(count);
+            std::cout << "p_thread push val: " << count++ << "\n";
+        }
+    });
+
+    std::thread c_thread([&] {
+        while (!que.is_stop() || !que.empty()) {
+            int val = que.pop();
+            std::cout << "c_thread pop val: " << val << "\n";
+        }
+    });
+
+    std::thread c_thread1([&] {
+        while (!que.is_stop() || !que.empty()) {
+            int val = que.pop();
+            std::cout << "c_thread pop val: " << val << "\n";
+        }
+    });
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(1s);
+    que.stop();
+
+    p_thread.join();
+    c_thread.join();
+    c_thread1.join();
 
     return 0;
 }
