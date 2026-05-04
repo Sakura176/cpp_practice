@@ -56,7 +56,6 @@
  */
 
 #include <atomic>
-#include <cstdio>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -81,22 +80,35 @@ template<typename T>
 class SemaphoreQueue
 {
 private:
-    std::queue<T>                queue_;
-    mutable std::mutex           mtx_;
-    std::counting_semaphore<100> sem_;
-    std::atomic<bool>            stop_{false};
+    std::queue<T>      queue_;
+    mutable std::mutex mtx_;
+    // 【BUG】max=100 对于无界队列太小，生产者快于消费者时阈值易超，release() 抛异常崩溃
+    // 应使用 std::counting_semaphore<>（默认 max=PTRDIFF_MAX）
+    std::counting_semaphore<> sem_;
+    std::atomic<bool>         stop_{false};
 
 public:
     SemaphoreQueue() : sem_(0) {}
 
+    // 【BUG】手动 lock() 不是异常安全的 — queue_.push() 抛 bad_alloc 时 mtx_ 永远锁定
+    // 修复: std::lock_guard<std::mutex> lock(mtx_); （RAII 保证异常安全）
     void push(const T& value)
     {
-        mtx_.lock();
-        queue_.push(value);
-        mtx_.unlock();
+        // mtx_.lock();
+        // queue_.push(value);
+        // mtx_.unlock();
+
+        {
+            std::lock_guard<std::mutex> lock(mtx_);
+            queue_.push(value);
+        }
+
         sem_.release();
     }
 
+    // 【BUG】sem_.acquire() 不可中断！stop() 后若队列已空且线程阻塞在此，将永远挂死
+    // 信号量没有 condition_variable::notify_all() 的等效机制
+    // 修复见评审文档方案 A/B/C
     T pop()
     {
         sem_.acquire();
@@ -145,6 +157,9 @@ int main()
         }
     });
 
+    // 【BUG】多消费者 drain 的 TOCTOU 竞态:
+    // empty() 返回 false → 进入循环 → pop() 中 sem_.acquire()
+    // 但另一个消费者可能已取走最后一个元素 → 此线程永久阻塞
     std::thread c_thread([&] {
         while (!que.is_stop() || !que.empty()) {
             int val = que.pop();
@@ -152,6 +167,7 @@ int main()
         }
     });
 
+    // 第二个消费者加剧了以上竞争条件
     std::thread c_thread1([&] {
         while (!que.is_stop() || !que.empty()) {
             int val = que.pop();
