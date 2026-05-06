@@ -89,6 +89,7 @@ template<typename T>
 class SPSCQueue
 {
     static const int MAX_BUF_SIZE = 1024;
+    // NOTE: 应加 static_assert((MAX_BUF_SIZE & (MAX_BUF_SIZE-1)) == 0, "需要 2 的幂");
 
 private:
     T                   buffer_[MAX_BUF_SIZE];
@@ -96,37 +97,35 @@ private:
     std::atomic<size_t> read_index_;
 
 public:
+    // 【BUG 1】索引就地 wrap 破坏了核心不变量！
+    //   exchange() 将 write_index_ 重置为小值，导致 write_index_-read_index_ 无符号下溢，
+    //   full() 永远返回 false → 数据被覆盖。
+    // 【BUG 2】int 接收 atomic<size_t> -> 类型截断风险
+    // 正确设计: 索引单调递增，buffer_[index & (Size-1)] 访问，永不回绕索引本身
     bool try_push(const T& value)
     {
-        int write_index = write_index_.load(std::memory_order_acquire);
-        int read_index  = read_index_.load(std::memory_order_acquire);
-        if (write_index >= MAX_BUF_SIZE) {
-            write_index &= (MAX_BUF_SIZE - 1);
-            write_index_.exchange(write_index, std::memory_order_acq_rel);
-        }
+        size_t write_index = write_index_.load(std::memory_order_acquire);
+        size_t read_index  = read_index_.load(std::memory_order_acquire);
 
         if (full())
             return false;
 
-        buffer_[write_index] = value;
+        buffer_[write_index & (MAX_BUF_SIZE - 1)] = value;
         write_index_.fetch_add(1, std::memory_order_acq_rel);
         return true;
     }
 
+    // 与 try_push 同样的 index wrap bug，导致消费者读到过时数据
     bool try_pop(T& value)
     {
-        int write_index = write_index_.load(std::memory_order_acquire);
-        int read_index  = read_index_.load(std::memory_order_acquire);
-        if (read_index >= MAX_BUF_SIZE) {
-            read_index &= (MAX_BUF_SIZE - 1);
-            read_index_.exchange(read_index, std::memory_order_acq_rel);
-        }
+        size_t write_index = write_index_.load(std::memory_order_acquire);
+        size_t read_index  = read_index_.load(std::memory_order_acquire);
 
         if (empty()) {
             return false;
         }
 
-        value = buffer_[read_index];
+        value = buffer_[read_index & (MAX_BUF_SIZE - 1)];
         read_index_.fetch_add(1, std::memory_order_acq_rel);
         return true;
     }
@@ -159,6 +158,8 @@ int main()
 
     SPSCQueue<int> que;
 
+    // 【BUG】无限循环 — 无 stop() 机制，程序无法优雅退出
+    // 【BUG】无休眠的忙等待 — 100% CPU 利用率
     std::thread p_thread([&] {
         int count = 0;
         while (true) {
@@ -167,6 +168,8 @@ int main()
         }
     });
 
+    // 【BUG】try_pop 返回 false 时 val 保持 -1，但代码仍将其作为有效数据输出
+    // 应改为: if (que.try_pop(val)) { 使用 val }
     std::thread c_thread([&] {
         while (true) {
             int val = -1;
