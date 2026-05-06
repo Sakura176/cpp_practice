@@ -85,6 +85,64 @@
 //   标准环形缓冲区判满留一个空位: (write_index - read_index) == Size
 //   或者维护 count_ 原子变量（略增加开销）
 // ============================================================
+template<typename T>
+class SPSCQueue
+{
+    static const int MAX_BUF_SIZE = 1024;
+
+private:
+    T                   buffer_[MAX_BUF_SIZE];
+    std::atomic<size_t> write_index_;
+    std::atomic<size_t> read_index_;
+
+public:
+    bool try_push(const T& value)
+    {
+        int write_index = write_index_.load(std::memory_order_acquire);
+        int read_index  = read_index_.load(std::memory_order_acquire);
+        if (write_index >= MAX_BUF_SIZE) {
+            write_index &= (MAX_BUF_SIZE - 1);
+            write_index_.exchange(write_index, std::memory_order_acq_rel);
+        }
+
+        if (full())
+            return false;
+
+        buffer_[write_index] = value;
+        write_index_.fetch_add(1, std::memory_order_acq_rel);
+        return true;
+    }
+
+    bool try_pop(T& value)
+    {
+        int write_index = write_index_.load(std::memory_order_acquire);
+        int read_index  = read_index_.load(std::memory_order_acquire);
+        if (read_index >= MAX_BUF_SIZE) {
+            read_index &= (MAX_BUF_SIZE - 1);
+            read_index_.exchange(read_index, std::memory_order_acq_rel);
+        }
+
+        if (empty()) {
+            return false;
+        }
+
+        value = buffer_[read_index];
+        read_index_.fetch_add(1, std::memory_order_acq_rel);
+        return true;
+    }
+
+    size_t size() const
+    { return write_index_.load(std::memory_order_acquire) - read_index_.load(std::memory_order_acquire); }
+
+    bool empty() const
+    { return write_index_.load(std::memory_order_acquire) - read_index_.load(std::memory_order_acquire) == 0; }
+
+    bool full() const
+    {
+        return write_index_.load(std::memory_order_acquire) - read_index_.load(std::memory_order_acquire) ==
+               MAX_BUF_SIZE;
+    }
+};
 
 // ============================================================
 // TODO: main() — 1 个生产者线程 + 1 个消费者线程
@@ -98,6 +156,27 @@ int main()
     // TODO: 消费者连续读取数据
     // TODO: 验证所有数据被正确消费（没有丢失、没有错序）
     // TODO: 对比条件变量版本的性能
+
+    SPSCQueue<int> que;
+
+    std::thread p_thread([&] {
+        int count = 0;
+        while (true) {
+            que.try_push(count);
+            std::cout << "p_thread try push val: " << count++ << "\n";
+        }
+    });
+
+    std::thread c_thread([&] {
+        while (true) {
+            int val = -1;
+            que.try_pop(val);
+            std::cout << "c_thread try pop val: " << val << "\n";
+        }
+    });
+
+    p_thread.join();
+    c_thread.join();
 
     return 0;
 }
